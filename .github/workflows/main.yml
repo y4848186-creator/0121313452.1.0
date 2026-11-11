@@ -1,0 +1,55 @@
+name: Linux GUI Desktop
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل السيرفر يدوياً من تبويب Actions
+
+jobs:
+  run-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # أقصى مدة للتشغيل (حوالي 5.5 ساعات)
+
+    steps:
+      - name: 1. تحديث النظام وتثبيت الواجهة الرسومية و noVNC
+        run: |
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y xfce4 xfce4-goodies tightvncserver novnc websockify wget
+
+      - name: 2. تثبيت أداة Cloudflare Tunnel
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
+
+      - name: 3. إعداد كلمة المرور وتشغيل خادم VNC
+        run: |
+          mkdir -p ~/.vnc
+          echo "1q2w3e4rasdf@" | vncpasswd -f > ~/.vnc/passwd
+          chmod 600 ~/.vnc/passwd
+          vncserver :1 -geometry 1280x720 -depth 24
+
+      - name: 4. تشغيل النفق واستخراج رابط الدخول
+        run: |
+          # تشغيل محول الويب على المنفذ 6080
+          nohup websockify --web=/usr/share/novnc/ 6080 localhost:5901 > /dev/null 2>&1 &
+          
+          # تشغيل نفق Cloudflare في الخلفية وحفظ السجلات
+          cloudflared tunnel --url http://localhost:6080 > tunnel.log 2>&1 &
+          
+          # البحث عن الرابط داخل السجلات وطباعته
+          sleep 5
+          echo "=========================================="
+          for i in {1..20}; do
+            URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' tunnel.log | head -n 1)
+            if [ -n "$URL" ]; then
+              echo "✅ تم تجهيز سطح المكتب بنجاح!"
+              echo "🔗 الرابط المباشر: ${URL}/vnc.html"
+              echo "🔑 كلمة المرور: 1q2w3e4rasdf@"
+              echo "=========================================="
+              break
+            fi
+            sleep 2
+          done
+
+      - name: 5. إبقاء الجلسة قيد التشغيل (Keep Alive)
+        run: |
+          echo "السيرفر يعمل الآن... سيستمر بالعمل حتى انتهاء وقت الجلسة."
+          sleep 21600 # إبقاء السيرفر حياً لعدة ساعات
